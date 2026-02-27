@@ -1,0 +1,575 @@
+Directory structure:
+└── Collage Fee Management/
+    └── Backend/
+        ├── package.json
+        ├── server.js
+        ├── config/
+        │   ├── db.js
+        │   └── User.js
+        ├── controllers/
+        │   ├── authContoller.js
+        │   ├── feeContoller.js
+        │   ├── paymentController.js
+        │   └── studentController.js
+        ├── middleware/
+        │   ├── authMiddleware.js
+        │   └── roleMiddleware.js
+        ├── models/
+        │   ├── FeeStructure.js
+        │   ├── Payment.js
+        │   ├── Role.js
+        │   ├── Student.js
+        │   └── userModel.js
+        ├── routes/
+        │   ├── authRoutes.js
+        │   ├── feeRoutes.js
+        │   ├── paymentRoutes.js
+        │   └── studentRoutes.js
+        └── utils/
+            └── generateToken.js
+
+================================================
+FILE: Backend/package.json
+================================================
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.2",
+    "morgan": "^1.10.1",
+    "nodemailer": "^8.0.1",
+    "razorpay": "^2.9.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
+
+
+
+================================================
+FILE: Backend/server.js
+================================================
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import morgan from "morgan";
+import cookieParser from "cookie-parser";
+
+import connectDB from "./config/db.js";
+import authRoutes from "./routes/authRoutes.js";
+import studentRoutes from "./routes/studentRoutes.js";
+import feeRoutes from "./routes/feeRoutes.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
+
+dotenv.config();
+connectDB();
+
+const app = express();
+
+app.use(express.json());
+app.use(cors());
+app.use(morgan("dev"));
+app.use(cookieParser());
+
+app.use("/api/auth", authRoutes);
+app.use("/api/students", studentRoutes);
+app.use("/api/fees", feeRoutes);
+app.use("/api/payments", paymentRoutes);
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+
+================================================
+FILE: Backend/config/db.js
+================================================
+import mongoose from "mongoose";
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("MongoDB Connected");
+  } catch (error) {
+    console.log(error);
+    process.exit(1);
+  }
+};
+ export default connectDB;
+
+
+================================================
+FILE: Backend/config/User.js
+================================================
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: { type: String, unique: true },
+  password: String,
+  role: {
+    type: String,
+    enum: ["admin", "accountant", "student"],
+    default: "student",
+  },
+}, { timestamps: true });
+
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+  this.password = await bcrypt.hash(this.password, 10);
+});
+
+module.exports = mongoose.model("User", userSchema);
+
+
+================================================
+FILE: Backend/controllers/authContoller.js
+================================================
+import User from "../models/userModel.js";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "30d" });
+}
+
+export const register = async (req, res) => {
+  const { name, email, password, role } = req.body;
+
+  const user = await User.create({ name, email, password, role });
+
+  res.json({
+    _id: user._id,
+    name: user.name,
+    token: generateToken(user._id),
+  });
+};
+
+export const login = async (req, res) => {
+  const { email, password } = req.body;
+
+  const user = await User.findOne({ email });
+
+  if (user && (await bcrypt.compare(password, user.password))) {
+    res.json({
+      _id: user._id,
+      name: user.name,
+      role: user.role,
+      token: generateToken(user._id),
+    });
+  } else {
+    res.status(401).json({ message: "Invalid credentials" });
+  }
+};
+
+
+
+================================================
+FILE: Backend/controllers/feeContoller.js
+================================================
+import FeeStructure from "../models/FeeStructure.js";
+
+export const createFeeStructure = async (req, res) => {
+  try {
+    const fee = await FeeStructure.create(req.body);
+    res.status(201).json(fee);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getFeeStructures = async (req, res) => {
+  const fees = await FeeStructure.find();
+  res.json(fees);
+};
+
+
+================================================
+FILE: Backend/controllers/paymentController.js
+================================================
+import Payment from "../models/Payment.js";
+
+export const addPayment = async (req, res) => {
+  try {
+    const payment = await Payment.create(req.body);
+    res.status(201).json(payment);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getPayments = async (req, res) => {
+  const payments = await Payment.find().populate({
+    path: "student",
+    populate: { path: "user", select: "-password" },
+  });
+
+  res.json(payments);
+};
+
+
+================================================
+FILE: Backend/controllers/studentController.js
+================================================
+import Student from "../models/Student.js";
+import User from "../models/userModel.js";
+import Payment from "../models/Payment.js";
+import FeeStructure from "../models/FeeStructure.js";
+
+export const createStudent = async (req, res) => {
+  try {
+    const { user, rollNumber, department, year, semester } = req.body;
+
+    // Check if user exists
+    const existingUser = await User.findById(user);
+    if (!existingUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const student = await Student.create({
+      user,
+      rollNumber,
+      department,
+      year,
+      semester,
+    });
+
+    res.status(201).json(student);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getAllStudents = async (req, res) => {
+  const students = await Student.find().populate("user", "-password");
+  res.json(students);
+};
+
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+// Get student summary (fees and payments)
+// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+export const getStudentSummary = async (req, res) => {
+  try {
+    const studentId = req.params.id;
+
+    const student = await Student.findById(studentId);
+
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    // Find fee structure
+    const feeStructure = await FeeStructure.findOne({
+      department: student.department,
+      year: student.year,
+      semester: student.semester,
+    });
+
+    if (!feeStructure) {
+      return res.status(404).json({ message: "Fee structure not found" });
+    }
+
+    const totalFee =
+      feeStructure.tuitionFee +
+      feeStructure.examFee +
+      feeStructure.libraryFee +
+      feeStructure.hostelFee;
+
+    // Get payments
+    const payments = await Payment.find({ student: studentId });
+
+    const totalPaid = payments.reduce(
+      (acc, payment) => acc + payment.amountPaid,
+      0
+    );
+
+    const remaining = totalFee - totalPaid;
+
+    res.json({
+      student: student.rollNumber,
+      totalFee,
+      totalPaid,
+      remaining,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+
+================================================
+FILE: Backend/middleware/authMiddleware.js
+================================================
+import jwt from "jsonwebtoken";
+import User from "../models/userModel.js";
+
+  const protect = async (req, res, next) => {
+  let token;
+
+  if (req.headers.authorization?.startsWith("Bearer")) {
+    token = req.headers.authorization.split(" ")[1];
+  }
+
+  if (!token) return res.status(401).json({ message: "Not authorized" });
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = await User.findById(decoded.id).select("-password");
+    next();
+  } catch (error) {
+    res.status(401).json({ message: "Token failed" });
+  }
+};
+
+export { protect };
+
+
+================================================
+FILE: Backend/middleware/roleMiddleware.js
+================================================
+export const authorizeRoles = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({
+        message: `Access denied. Role (${req.user.role}) not allowed.`,
+      });
+    }
+    next();
+  };
+};
+
+
+================================================
+FILE: Backend/models/FeeStructure.js
+================================================
+import mongoose from "mongoose";
+
+const feeStructureSchema = new mongoose.Schema(
+  {
+    department: String,
+    year: Number,
+    semester: Number,
+    tuitionFee: Number,
+    examFee: Number,
+    libraryFee: Number,
+    hostelFee: Number,
+  },
+  { timestamps: true }
+);
+
+const FeeStructure = mongoose.model("FeeStructure", feeStructureSchema);
+
+export default FeeStructure;
+
+
+================================================
+FILE: Backend/models/Payment.js
+================================================
+import mongoose from "mongoose";
+
+const paymentSchema = new mongoose.Schema(
+  {
+    student: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Student",
+      required: true,
+    },
+    amountPaid: Number,
+    paymentMode: {
+      type: String,
+      enum: ["cash", "upi", "card", "online"],
+    },
+    transactionId: String,
+    status: {
+      type: String,
+      enum: ["pending", "completed"],
+      default: "completed",
+    },
+  },
+  { timestamps: true }
+);
+
+const Payment = mongoose.model("Payment", paymentSchema);
+
+export default Payment;
+
+
+================================================
+FILE: Backend/models/Role.js
+================================================
+import mongoose from "mongoose";
+
+const roleSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    enum: ["admin", "accountant", "student"],
+    required: true,
+    unique: true
+  },
+  permissions: {
+    type: [String],
+    default: []
+  }
+}, { timestamps: true });
+
+export default mongoose.model("Role", roleSchema);
+
+
+================================================
+FILE: Backend/models/Student.js
+================================================
+import mongoose from "mongoose";
+
+const studentSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    rollNumber: {
+      type: String,
+      required: true,
+      unique: true,
+    },
+    department: String,
+    year: Number,
+    semester: Number,
+  },
+  { timestamps: true }
+);
+
+const Student = mongoose.model("Student", studentSchema);
+
+export default Student;
+
+
+================================================
+FILE: Backend/models/userModel.js
+================================================
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+
+
+const userSchema = new mongoose.Schema({
+  name: String,
+  email: { type: String, unique: true },
+  password: String,
+  role: {
+    type: String,
+    enum: ["admin", "accountant", "student"],
+    default: "student",
+  },
+}, { timestamps: true });
+
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+  this.password = await bcrypt.hash(this.password, 10);
+});
+
+export default mongoose.model("User", userSchema);
+
+
+================================================
+FILE: Backend/routes/authRoutes.js
+================================================
+import express from "express";
+import { register, login } from "../controllers/authContoller.js";
+
+const router = express.Router();
+
+router.post("/register", register);
+router.post("/login", login);
+
+export default router;
+
+
+================================================
+FILE: Backend/routes/feeRoutes.js
+================================================
+import express from "express";
+import { createFeeStructure, getFeeStructures } from "../controllers/feeContoller.js";
+import { protect } from "../middleware/authMiddleware.js";
+import { authorizeRoles } from "../middleware/roleMiddleware.js";
+
+const router = express.Router();
+
+router.post("/", protect, authorizeRoles("admin"), createFeeStructure);
+router.get("/", protect, getFeeStructures);
+
+export default router;
+
+
+================================================
+FILE: Backend/routes/paymentRoutes.js
+================================================
+import express from "express";
+import { addPayment, getPayments } from "../controllers/paymentController.js";
+import { protect } from "../middleware/authMiddleware.js";
+import { authorizeRoles } from "../middleware/roleMiddleware.js";
+
+const router = express.Router();
+
+router.post("/", protect, authorizeRoles("accountant"), addPayment);
+router.get("/", protect, authorizeRoles("admin", "accountant"), getPayments);
+
+export default router;
+
+
+================================================
+FILE: Backend/routes/studentRoutes.js
+================================================
+import express from "express";
+import { createStudent, getAllStudents } from "../controllers/studentController.js";
+import { protect } from "../middleware/authMiddleware.js";
+import { authorizeRoles } from "../middleware/roleMiddleware.js";
+import { getStudentSummary } from "../controllers/studentController.js";
+
+const router = express.Router();
+
+router.post("/", protect, authorizeRoles("admin"), createStudent);
+router.get("/", protect, authorizeRoles("admin", "accountant"), getAllStudents);
+router.get(
+  "/:id/summary",
+  protect,
+  authorizeRoles("admin", "accountant", "student"),
+  getStudentSummary
+);
+
+export default router;
+
+
+================================================
+FILE: Backend/utils/generateToken.js
+================================================
+import jwt from "jsonwebtoken";
+
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
+};
+
+module.exports = generateToken;
+
