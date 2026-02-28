@@ -3,6 +3,8 @@ import { createStudent, getAllStudents } from "../controllers/studentController.
 import { protect } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
 import { getStudentSummary } from "../controllers/studentController.js";
+import { sendFeeReminder } from "../controllers/studentController.js";
+import { createStudentWithUser } from "../controllers/studentController.js";
 
 const router = express.Router();
 
@@ -13,6 +15,19 @@ router.get(
   protect,
   authorizeRoles("admin", "accountant", "student"),
   getStudentSummary
+);
+router.post(
+  "/:id/send-reminder",
+  protect,
+  authorizeRoles("admin"),
+  sendFeeReminder
+);
+
+router.post(
+  "/with-user",
+  protect,
+  authorizeRoles("admin"),
+  createStudentWithUser
 );
 
 export default router;

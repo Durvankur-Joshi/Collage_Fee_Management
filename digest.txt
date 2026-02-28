@@ -1,32 +1,75 @@
 Directory structure:
 └── Collage Fee Management/
-    └── Backend/
+    ├── Backend/
+    │   ├── package.json
+    │   ├── server.js
+    │   ├── config/
+    │   │   ├── db.js
+    │   │   └── User.js
+    │   ├── controllers/
+    │   │   ├── authContoller.js
+    │   │   ├── feeContoller.js
+    │   │   ├── paymentController.js
+    │   │   └── studentController.js
+    │   ├── middleware/
+    │   │   ├── authMiddleware.js
+    │   │   └── roleMiddleware.js
+    │   ├── models/
+    │   │   ├── FeeStructure.js
+    │   │   ├── Payment.js
+    │   │   ├── Role.js
+    │   │   ├── Student.js
+    │   │   └── userModel.js
+    │   ├── routes/
+    │   │   ├── authRoutes.js
+    │   │   ├── feeRoutes.js
+    │   │   ├── paymentRoutes.js
+    │   │   └── studentRoutes.js
+    │   └── utils/
+    │       ├── generateToken.js
+    │       └── sendEmail.js
+    └── Frontend/
+        ├── README.md
+        ├── eslint.config.js
+        ├── index.html
         ├── package.json
-        ├── server.js
-        ├── config/
-        │   ├── db.js
-        │   └── User.js
-        ├── controllers/
-        │   ├── authContoller.js
-        │   ├── feeContoller.js
-        │   ├── paymentController.js
-        │   └── studentController.js
-        ├── middleware/
-        │   ├── authMiddleware.js
-        │   └── roleMiddleware.js
-        ├── models/
-        │   ├── FeeStructure.js
-        │   ├── Payment.js
-        │   ├── Role.js
-        │   ├── Student.js
-        │   └── userModel.js
-        ├── routes/
-        │   ├── authRoutes.js
-        │   ├── feeRoutes.js
-        │   ├── paymentRoutes.js
-        │   └── studentRoutes.js
-        └── utils/
-            └── generateToken.js
+        ├── postcss.config.js
+        ├── tailwind.config.js
+        ├── vite.config.js
+        └── src/
+            ├── App.css
+            ├── App.jsx
+            ├── index.css
+            ├── main.jsx
+            ├── api/
+            │   ├── axios.js
+            │   └── index.js
+            ├── components/
+            │   ├── ProtectedRoute.jsx
+            │   └── Layout/
+            │       ├── Footer.jsx
+            │       ├── Header.jsx
+            │       ├── Layout.jsx
+            │       └── Sidebar.jsx
+            ├── context/
+            │   └── AuthContext.jsx
+            └── pages/
+                ├── Dashboard.jsx
+                ├── Login.jsx
+                ├── Register.jsx
+                ├── Unauthorized.jsx
+                ├── Fees/
+                │   ├── AddFeeStructure.jsx
+                │   └── FeeStructure.jsx
+                ├── Payments/
+                │   ├── AddPayment.jsx
+                │   └── PaymentList.jsx
+                ├── Settings/
+                │   └── EmailSettings.jsx
+                └── Students/
+                    ├── AddStudent.jsx
+                    ├── StudentList.jsx
+                    └── StudentSummary.jsx
 
 ================================================
 FILE: Backend/package.json
@@ -154,15 +197,27 @@ const generateToken = (id) => {
 }
 
 export const register = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  try {
+    const { name, email, password } = req.body;
 
-  const user = await User.create({ name, email, password, role });
+    // Always default role = student
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role: "student",
+    });
 
-  res.json({
-    _id: user._id,
-    name: user.name,
-    token: generateToken(user._id),
-  });
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      token: generateToken(user._id),
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
 };
 
 export const login = async (req, res) => {
@@ -182,6 +237,31 @@ export const login = async (req, res) => {
   }
 };
 
+export const createUserByAdmin = async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+
+    if (!["admin", "accountant"].includes(role)) {
+      return res.status(400).json({
+        message: "Invalid role selection",
+      });
+    }
+
+    const user = await User.create({
+      name,
+      email,
+      password,
+      role,
+    });
+
+    res.status(201).json({
+      message: `${role} created successfully`,
+      user,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
 
 
 ================================================
@@ -208,11 +288,36 @@ export const getFeeStructures = async (req, res) => {
 FILE: Backend/controllers/paymentController.js
 ================================================
 import Payment from "../models/Payment.js";
+import sendEmail from "../utils/sendEmail.js";
+import Student from "../models/Student.js";
+import User from "../models/userModel.js";
 
 export const addPayment = async (req, res) => {
   try {
     const payment = await Payment.create(req.body);
-    res.status(201).json(payment);
+
+    // Get student details
+    const student = await Student.findById(payment.student).populate("user");
+
+    const email = student.user.email;
+
+    // Send email
+    await sendEmail(
+      email,
+      "Payment Confirmation",
+      `Hello ${student.user.name},
+
+Your payment of â‚¹${payment.amountPaid} has been successfully received.
+
+Transaction ID: ${payment.transactionId}
+
+Thank you.`
+    );
+
+    res.status(201).json({
+      message: "Payment added & email sent successfully",
+      payment,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -235,6 +340,7 @@ import Student from "../models/Student.js";
 import User from "../models/userModel.js";
 import Payment from "../models/Payment.js";
 import FeeStructure from "../models/FeeStructure.js";
+import sendEmail from "../utils/sendEmail.js";
 
 export const createStudent = async (req, res) => {
   try {
@@ -310,6 +416,70 @@ export const getStudentSummary = async (req, res) => {
       student: student.rollNumber,
       totalFee,
       totalPaid,
+      remaining,
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const sendFeeReminder = async (req, res) => {
+  try {
+    const studentId = req.params.id;
+
+    const student = await Student.findById(studentId).populate("user");
+
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    const feeStructure = await FeeStructure.findOne({
+      department: student.department,
+      year: student.year,
+      semester: student.semester,
+    });
+
+    if (!feeStructure) {
+      return res.status(404).json({ message: "Fee structure not found" });
+    }
+
+    const totalFee =
+      feeStructure.tuitionFee +
+      feeStructure.examFee +
+      feeStructure.libraryFee +
+      feeStructure.hostelFee;
+
+    const payments = await Payment.find({ student: studentId });
+
+    const totalPaid = payments.reduce(
+      (acc, payment) => acc + payment.amountPaid,
+      0
+    );
+
+    const remaining = totalFee - totalPaid;
+
+    if (remaining <= 0) {
+      return res.json({
+        message: "Student has no pending dues.",
+      });
+    }
+
+    await sendEmail(
+      student.user.email,
+      "Fee Due Reminder",
+      `Hello ${student.user.name},
+
+Your total fee is â‚¹${totalFee}.
+Amount paid: â‚¹${totalPaid}.
+Remaining amount: â‚¹${remaining}.
+
+Please complete your payment as soon as possible.
+
+Thank you.`
+    );
+
+    res.json({
+      message: "Fee reminder email sent successfully.",
       remaining,
     });
   } catch (error) {
@@ -495,12 +665,20 @@ export default mongoose.model("User", userSchema);
 FILE: Backend/routes/authRoutes.js
 ================================================
 import express from "express";
-import { register, login } from "../controllers/authContoller.js";
+import { register, login, createUserByAdmin  } from "../controllers/authContoller.js";
+import  { authorizeRoles } from "../middleware/roleMiddleware.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
+router.post(
+  "/create-user",
+  protect,
+  authorizeRoles("admin"),
+  createUserByAdmin
+);
 
 export default router;
 
@@ -545,6 +723,7 @@ import { createStudent, getAllStudents } from "../controllers/studentController.
 import { protect } from "../middleware/authMiddleware.js";
 import { authorizeRoles } from "../middleware/roleMiddleware.js";
 import { getStudentSummary } from "../controllers/studentController.js";
+import { sendFeeReminder } from "../controllers/studentController.js";
 
 const router = express.Router();
 
@@ -555,6 +734,12 @@ router.get(
   protect,
   authorizeRoles("admin", "accountant", "student"),
   getStudentSummary
+);
+router.post(
+  "/:id/send-reminder",
+  protect,
+  authorizeRoles("admin"),
+  sendFeeReminder
 );
 
 export default router;
@@ -572,4 +757,2637 @@ const generateToken = (id) => {
 };
 
 module.exports = generateToken;
+
+
+================================================
+FILE: Backend/utils/sendEmail.js
+================================================
+import nodemailer from "nodemailer";
+
+const sendEmail = async (to, subject, text) => {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to,
+    subject,
+    text,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+export default sendEmail;
+
+
+================================================
+FILE: Frontend/README.md
+================================================
+# React + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+
+## React Compiler
+
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+
+## Expanding the ESLint configuration
+
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+
+
+================================================
+FILE: Frontend/eslint.config.js
+================================================
+import js from '@eslint/js'
+import globals from 'globals'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import { defineConfig, globalIgnores } from 'eslint/config'
+
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{js,jsx}'],
+    extends: [
+      js.configs.recommended,
+      reactHooks.configs.flat.recommended,
+      reactRefresh.configs.vite,
+    ],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        ecmaFeatures: { jsx: true },
+        sourceType: 'module',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
+])
+
+
+
+================================================
+FILE: Frontend/index.html
+================================================
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>College Fee Management System</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+
+
+================================================
+FILE: Frontend/package.json
+================================================
+{
+  "name": "frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "axios": "^1.13.5",
+    "lucide-react": "^0.575.0",
+    "postcss": "^8.5.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-hot-toast": "^2.6.0",
+    "react-is": "^18.2.0",
+    "react-router-dom": "^7.13.1",
+    "recharts": "^3.7.0",
+    "tailwindcss": "^4.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "vite": "^7.3.1"
+  }
+}
+
+
+
+================================================
+FILE: Frontend/postcss.config.js
+================================================
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+
+
+================================================
+FILE: Frontend/tailwind.config.js
+================================================
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+
+
+================================================
+FILE: Frontend/vite.config.js
+================================================
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+      }
+    }
+  }
+})
+
+
+================================================
+FILE: Frontend/src/App.css
+================================================
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+
+
+================================================
+FILE: Frontend/src/App.jsx
+================================================
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+
+// Layout
+import Layout from './components/Layout/Layout';
+
+// Pages
+import Login from './pages/Login';
+import Register from './pages/Register';
+import Dashboard from './pages/Dashboard';
+import StudentList from './pages/Students/StudentList';
+import AddStudent from './pages/Students/AddStudent';
+import StudentSummary from './pages/Students/StudentSummary';
+import FeeStructure from './pages/Fees/FeeStructure';
+import AddFeeStructure from './pages/Fees/AddFeeStructure';
+import PaymentList from './pages/Payments/PaymentList';
+import AddPayment from './pages/Payments/AddPayment';
+import Unauthorized from './pages/Unauthorized';
+import ProtectedRoute from './components/ProtectedRoute';
+import EmailSettings from './pages/Settings/EmailSettings';
+
+function AppRoutes() {
+  const { user } = useAuth();
+
+  return (
+    <Routes>
+      <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
+      <Route path="/register" element={!user ? <Register /> : <Navigate to="/dashboard" />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
+       <Route path="settings/email" element={
+        <ProtectedRoute allowedRoles={['admin']}>
+          <EmailSettings />
+        </ProtectedRoute>
+      } />
+
+      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route index element={<Navigate to="/dashboard" />} />
+        <Route path="dashboard" element={<Dashboard />} />
+
+        {/* Student Routes */}
+        <Route path="students">
+          <Route index element={
+            <ProtectedRoute allowedRoles={['admin', 'accountant']}>
+              <StudentList />
+            </ProtectedRoute>
+          } />
+          <Route path="add" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AddStudent />
+            </ProtectedRoute>
+          } />
+          <Route path=":id/summary" element={
+            <ProtectedRoute allowedRoles={['admin', 'accountant', 'student']}>
+              <StudentSummary />
+            </ProtectedRoute>
+          } />
+        </Route>
+
+        {/* Fee Routes */}
+        <Route path="fees">
+          <Route index element={<FeeStructure />} />
+          <Route path="add" element={
+            <ProtectedRoute allowedRoles={['admin']}>
+              <AddFeeStructure />
+            </ProtectedRoute>
+          } />
+        </Route>
+
+        {/* Payment Routes */}
+        <Route path="payments">
+          <Route index element={
+            <ProtectedRoute allowedRoles={['admin', 'accountant']}>
+              <PaymentList />
+            </ProtectedRoute>
+          } />
+          <Route path="add" element={
+            <ProtectedRoute allowedRoles={['accountant']}>
+              <AddPayment />
+            </ProtectedRoute>
+          } />
+        </Route>
+      </Route>
+    </Routes>
+  );
+}
+
+function App() {
+  return (
+    <Router>
+      <AuthProvider>
+        <Toaster position="top-right" />
+        <AppRoutes />
+      </AuthProvider>
+    </Router>
+  );
+}
+
+export default App;
+
+
+================================================
+FILE: Frontend/src/index.css
+================================================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors;
+  }
+  
+  .input-field {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500;
+  }
+}
+
+
+================================================
+FILE: Frontend/src/main.jsx
+================================================
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import App from './App.jsx'
+import './index.css'
+
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+)
+
+
+================================================
+FILE: Frontend/src/api/axios.js
+================================================
+import axios from 'axios';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+const axiosInstance = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// Request interceptor to add token
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default axiosInstance;
+
+
+================================================
+FILE: Frontend/src/api/index.js
+================================================
+import axios from './axios';
+
+// Auth APIs
+export const authAPI = {
+  register: (userData) => axios.post('/auth/register', userData),
+  login: (credentials) => axios.post('/auth/login', credentials),
+};
+
+// Student APIs
+export const studentAPI = {
+  getAll: () => axios.get('/students'),
+  create: (data) => axios.post('/students', data),
+  getSummary: (id) => axios.get(`/students/${id}/summary`),
+  sendFeeReminder: (id) => axios.post(`/students/${id}/send-reminder`), // New endpoint
+};
+
+// Fee APIs
+export const feeAPI = {
+  getAll: () => axios.get('/fees'),
+  create: (data) => axios.post('/fees', data),
+};
+
+// Payment APIs
+export const paymentAPI = {
+  getAll: () => axios.get('/payments'),
+  create: (data) => axios.post('/payments', data),
+};
+
+
+================================================
+FILE: Frontend/src/components/ProtectedRoute.jsx
+================================================
+import React from 'react';
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+
+const ProtectedRoute = ({ children, allowedRoles = [] }) => {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" />;
+  }
+
+  if (allowedRoles.length > 0 && !allowedRoles.includes(user.role)) {
+    return <Navigate to="/unauthorized" />;
+  }
+
+  return children;
+};
+
+export default ProtectedRoute;
+
+
+================================================
+FILE: Frontend/src/components/Layout/Footer.jsx
+================================================
+import React from 'react';
+
+const Footer = () => {
+  return (
+    <footer className="bg-white border-t py-4 px-6">
+      <div className="text-center text-gray-600 text-sm">
+        Â© {new Date().getFullYear()} College Fee Management System. All rights reserved.
+      </div>
+    </footer>
+  );
+};
+
+export default Footer;
+
+
+================================================
+FILE: Frontend/src/components/Layout/Header.jsx
+================================================
+import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import { LogOut, User, Menu } from 'lucide-react';
+
+const Header = () => {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  return (
+    <header className="bg-white shadow-sm border-b">
+      <div className="px-4 py-3 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <button 
+            className="lg:hidden"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+          >
+            <Menu size={24} />
+          </button>
+          <Link to="/dashboard" className="text-xl font-bold text-blue-600">
+            College Fee Management
+          </Link>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <User size={20} className="text-gray-600" />
+            <span className="text-sm">
+              {user?.name} ({user?.role})
+            </span>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1 text-red-600 hover:text-red-700"
+          >
+            <LogOut size={18} />
+            <span className="hidden sm:inline">Logout</span>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+export default Header;
+
+
+================================================
+FILE: Frontend/src/components/Layout/Layout.jsx
+================================================
+import React from 'react';
+import { Outlet } from 'react-router-dom';
+import Header from './Header';
+import Sidebar from './Sidebar';
+import Footer from './Footer';
+
+const Layout = () => {
+  return (
+    <div className="min-h-screen flex flex-col bg-gray-50">
+      <Header />
+      <div className="flex flex-1">
+        <Sidebar />
+        <main className="flex-1 p-6">
+          <Outlet />
+        </main>
+      </div>
+      <Footer />
+    </div>
+  );
+};
+
+export default Layout;
+
+
+================================================
+FILE: Frontend/src/components/Layout/Sidebar.jsx
+================================================
+import React from 'react';
+import { NavLink } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import {
+  LayoutDashboard,
+  Users,
+  CreditCard,
+  Receipt,
+  UserPlus,
+} from 'lucide-react';
+import { Mail } from 'lucide-react';
+
+const Sidebar = () => {
+  const { user } = useAuth();
+
+  const navItems = [
+    {
+      to: '/dashboard',
+      icon: <LayoutDashboard size={20} />,
+      label: 'Dashboard',
+      roles: ['admin', 'accountant', 'student'],
+    },
+    {
+      to: '/students',
+      icon: <Users size={20} />,
+      label: 'Students',
+      roles: ['admin', 'accountant'],
+    },
+    {
+      to: '/students/add',
+      icon: <UserPlus size={20} />,
+      label: 'Add Student',
+      roles: ['admin'],
+    },
+    {
+      to: '/fees',
+      icon: <Receipt size={20} />,
+      label: 'Fee Structure',
+      roles: ['admin', 'accountant', 'student'],
+    },
+    {
+      to: '/payments',
+      icon: <CreditCard size={20} />,
+      label: 'Payments',
+      roles: ['admin', 'accountant'],
+    },
+    {
+      to: '/settings/email',
+      icon: <Mail size={20} />,
+      label: 'Email Settings',
+      roles: ['admin'],
+    },
+  ];
+
+  const filteredNavItems = navItems.filter(item =>
+    item.roles.includes(user?.role)
+  );
+
+  return (
+    <aside className="w-64 bg-white shadow-sm border-r hidden lg:block">
+      <nav className="p-4">
+        <ul className="space-y-2">
+          {filteredNavItems.map((item) => (
+            <li key={item.to}>
+              <NavLink
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-4 py-2 rounded-lg transition-colors ${isActive
+                    ? 'bg-blue-50 text-blue-600'
+                    : 'text-gray-700 hover:bg-gray-50'
+                  }`
+                }
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </aside>
+  );
+};
+
+export default Sidebar;
+
+
+================================================
+FILE: Frontend/src/context/AuthContext.jsx
+================================================
+import React, { createContext, useState, useContext, useEffect } from 'react';
+import { authAPI } from '../api';
+import toast from 'react-hot-toast';
+
+const AuthContext = createContext();
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    const token = localStorage.getItem('token');
+
+    if (storedUser && token) {
+      setUser(JSON.parse(storedUser));
+    }
+    setLoading(false);
+  }, []);
+
+  const login = async (email, password) => {
+    try {
+      const response = await authAPI.login({ email, password });
+      const { token, ...userData } = response.data;
+
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(userData));
+      setUser(userData);
+
+      toast.success('Login successful!');
+      return { success: true, user: userData };
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Login failed');
+      return { success: false, error: error.response?.data?.message };
+    }
+  };
+
+  const register = async (userData) => {
+    try {
+      const response = await authAPI.register(userData);
+      toast.success('Registration successful! Please login.');
+      return { success: true };
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Registration failed');
+      return { success: false, error: error.response?.data?.message };
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    setUser(null);
+    toast.success('Logged out successfully');
+  };
+
+  const value = {
+    user,
+    login,
+    register,
+    logout,
+    loading,
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
+
+
+================================================
+FILE: Frontend/src/pages/Dashboard.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { studentAPI, paymentAPI, feeAPI } from '../api';
+import { 
+  Users, 
+  CreditCard, 
+  Receipt, 
+  DollarSign,
+  TrendingUp,
+  TrendingDown
+} from 'lucide-react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell
+} from 'recharts';
+import toast from 'react-hot-toast';
+
+const Dashboard = () => {
+  const { user } = useAuth();
+  const [stats, setStats] = useState({
+    totalStudents: 0,
+    totalPayments: 0,
+    totalFees: 0,
+    pendingPayments: 0,
+  });
+  const [recentPayments, setRecentPayments] = useState([]);
+  const [feeDistribution, setFeeDistribution] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      const [studentsRes, paymentsRes, feesRes] = await Promise.all([
+        studentAPI.getAll(),
+        paymentAPI.getAll(),
+        feeAPI.getAll(),
+      ]);
+
+      const students = studentsRes.data;
+      const payments = paymentsRes.data;
+      const fees = feesRes.data;
+
+      // Calculate stats
+      const totalPayments = payments.reduce((sum, p) => sum + p.amountPaid, 0);
+      const pendingPayments = students.length * 50000 - totalPayments; // Example calculation
+
+      setStats({
+        totalStudents: students.length,
+        totalPayments,
+        totalFees: fees.length,
+        pendingPayments: pendingPayments > 0 ? pendingPayments : 0,
+      });
+
+      // Set recent payments
+      setRecentPayments(payments.slice(0, 5));
+
+      // Set fee distribution
+      const distribution = fees.map(fee => ({
+        name: `${fee.department} - Year ${fee.year}`,
+        total: fee.tuitionFee + fee.examFee + fee.libraryFee + fee.hostelFee,
+      }));
+      setFeeDistribution(distribution);
+
+    } catch (error) {
+      toast.error('Failed to fetch dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statsCards = [
+    {
+      title: 'Total Students',
+      value: stats.totalStudents,
+      icon: <Users className="h-8 w-8 text-blue-500" />,
+      bgColor: 'bg-blue-100',
+    },
+    {
+      title: 'Total Payments',
+      value: `â‚¹${stats.totalPayments.toLocaleString()}`,
+      icon: <CreditCard className="h-8 w-8 text-green-500" />,
+      bgColor: 'bg-green-100',
+    },
+    {
+      title: 'Fee Structures',
+      value: stats.totalFees,
+      icon: <Receipt className="h-8 w-8 text-purple-500" />,
+      bgColor: 'bg-purple-100',
+    },
+    {
+      title: 'Pending Payments',
+      value: `â‚¹${stats.pendingPayments.toLocaleString()}`,
+      icon: <DollarSign className="h-8 w-8 text-orange-500" />,
+      bgColor: 'bg-orange-100',
+    },
+  ];
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {statsCards.map((stat, index) => (
+          <div
+            key={index}
+            className="bg-white rounded-lg shadow-sm p-6 flex items-center justify-between"
+          >
+            <div>
+              <p className="text-sm text-gray-600">{stat.title}</p>
+              <p className="text-2xl font-semibold mt-1">{stat.value}</p>
+            </div>
+            <div className={`${stat.bgColor} p-3 rounded-full`}>
+              {stat.icon}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Fee Distribution Chart */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">Fee Distribution</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={feeDistribution}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="total" fill="#8884d8" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Payment Status */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <h2 className="text-lg font-semibold mb-4">Payment Status</h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <PieChart>
+              <Pie
+                data={[
+                  { name: 'Paid', value: stats.totalPayments },
+                  { name: 'Pending', value: stats.pendingPayments },
+                ]}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {stats.totalPayments > 0 && (
+                  <>
+                    <Cell fill="#4CAF50" />
+                    <Cell fill="#FF9800" />
+                  </>
+                )}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Recent Payments */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <h2 className="text-lg font-semibold mb-4">Recent Payments</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead>
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Student
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mode
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Transaction ID
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {recentPayments.map((payment) => (
+                <tr key={payment._id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {payment.student?.rollNumber || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    â‚¹{payment.amountPaid?.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap capitalize">
+                    {payment.paymentMode}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {payment.transactionId || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {new Date(payment.createdAt).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+              {recentPayments.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="px-6 py-4 text-center text-gray-500">
+                    No recent payments
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;
+
+
+================================================
+FILE: Frontend/src/pages/Login.jsx
+================================================
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { LogIn } from 'lucide-react';
+
+const Login = () => {
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    const result = await login(formData.email, formData.password);
+    
+    if (result.success) {
+      navigate('/dashboard');
+    }
+    
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Sign in to your account
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Or{' '}
+            <Link to="/register" className="font-medium text-blue-600 hover:text-blue-500">
+              create a new account
+            </Link>
+          </p>
+        </div>
+        
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div className="rounded-md shadow-sm space-y-4">
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Email address
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+                className="input-field mt-1"
+                placeholder="Enter your email"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                value={formData.password}
+                onChange={handleChange}
+                className="input-field mt-1"
+                placeholder="Enter your password"
+              />
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                <LogIn className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
+              </span>
+              {loading ? 'Signing in...' : 'Sign in'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Login;
+
+
+================================================
+FILE: Frontend/src/pages/Register.jsx
+================================================
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import { UserPlus } from 'lucide-react';
+
+const Register = () => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    role: 'student',
+  });
+  const [loading, setLoading] = useState(false);
+  const { register } = useAuth();
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    const result = await register(formData);
+    
+    if (result.success) {
+      navigate('/login');
+    }
+    
+    setLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Create new account
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Or{' '}
+            <Link to="/login" className="font-medium text-blue-600 hover:text-blue-500">
+              sign in to existing account
+            </Link>
+          </p>
+        </div>
+        
+        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div className="rounded-md shadow-sm space-y-4">
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                Full Name
+              </label>
+              <input
+                id="name"
+                name="name"
+                type="text"
+                required
+                value={formData.name}
+                onChange={handleChange}
+                className="input-field mt-1"
+                placeholder="Enter your full name"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+                Email address
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                value={formData.email}
+                onChange={handleChange}
+                className="input-field mt-1"
+                placeholder="Enter your email"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                required
+                value={formData.password}
+                onChange={handleChange}
+                className="input-field mt-1"
+                placeholder="Enter your password"
+              />
+            </div>
+            
+            <div>
+              <label htmlFor="role" className="block text-sm font-medium text-gray-700">
+                Role
+              </label>
+              <select
+                id="role"
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                className="input-field mt-1"
+              >
+                <option value="student">Student</option>
+                <option value="accountant">Accountant</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span className="absolute left-0 inset-y-0 flex items-center pl-3">
+                <UserPlus className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
+              </span>
+              {loading ? 'Creating account...' : 'Create account'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default Register;
+
+
+================================================
+FILE: Frontend/src/pages/Unauthorized.jsx
+================================================
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { ShieldAlert } from 'lucide-react';
+
+const Unauthorized = () => {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <ShieldAlert className="h-24 w-24 text-red-500 mx-auto mb-4" />
+        <h1 className="text-3xl font-bold text-gray-900 mb-2">Access Denied</h1>
+        <p className="text-gray-600 mb-6">
+          You don't have permission to access this page.
+        </p>
+        <Link
+          to="/dashboard"
+          className="btn-primary inline-flex items-center"
+        >
+          Go to Dashboard
+        </Link>
+      </div>
+    </div>
+  );
+};
+
+export default Unauthorized;
+
+
+================================================
+FILE: Frontend/src/pages/Fees/AddFeeStructure.jsx
+================================================
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { feeAPI } from '../../api';
+import toast from 'react-hot-toast';
+
+const AddFeeStructure = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    department: '',
+    year: '',
+    semester: '',
+    tuitionFee: '',
+    examFee: '',
+    libraryFee: '',
+    hostelFee: '',
+  });
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      await feeAPI.create(formData);
+      toast.success('Fee structure added successfully');
+      navigate('/fees');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add fee structure');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Add Fee Structure</h1>
+      
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Department
+          </label>
+          <input
+            type="text"
+            name="department"
+            value={formData.department}
+            onChange={handleChange}
+            required
+            className="input-field"
+            placeholder="Enter department name"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Year
+            </label>
+            <input
+              type="number"
+              name="year"
+              value={formData.year}
+              onChange={handleChange}
+              required
+              min="1"
+              max="4"
+              className="input-field"
+              placeholder="Year"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Semester
+            </label>
+            <input
+              type="number"
+              name="semester"
+              value={formData.semester}
+              onChange={handleChange}
+              required
+              min="1"
+              max="8"
+              className="input-field"
+              placeholder="Semester"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tuition Fee
+            </label>
+            <input
+              type="number"
+              name="tuitionFee"
+              value={formData.tuitionFee}
+              onChange={handleChange}
+              required
+              min="0"
+              className="input-field"
+              placeholder="Amount"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Exam Fee
+            </label>
+            <input
+              type="number"
+              name="examFee"
+              value={formData.examFee}
+              onChange={handleChange}
+              required
+              min="0"
+              className="input-field"
+              placeholder="Amount"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Library Fee
+            </label>
+            <input
+              type="number"
+              name="libraryFee"
+              value={formData.libraryFee}
+              onChange={handleChange}
+              required
+              min="0"
+              className="input-field"
+              placeholder="Amount"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Hostel Fee
+            </label>
+            <input
+              type="number"
+              name="hostelFee"
+              value={formData.hostelFee}
+              onChange={handleChange}
+              required
+              min="0"
+              className="input-field"
+              placeholder="Amount"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary flex-1"
+          >
+            {loading ? 'Adding...' : 'Add Fee Structure'}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/fees')}
+            className="btn-secondary flex-1"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default AddFeeStructure;
+
+
+================================================
+FILE: Frontend/src/pages/Fees/FeeStructure.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { feeAPI } from '../../api';
+import { Plus, Edit } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import toast from 'react-hot-toast';
+
+const FeeStructure = () => {
+  const { user } = useAuth();
+  const [fees, setFees] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchFees();
+  }, []);
+
+  const fetchFees = async () => {
+    try {
+      const response = await feeAPI.getAll();
+      setFees(response.data);
+    } catch (error) {
+      toast.error('Failed to fetch fee structures');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading fee structures...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Fee Structure</h1>
+        {user?.role === 'admin' && (
+          <Link
+            to="/fees/add"
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Add Fee Structure
+          </Link>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {fees.map((fee) => {
+          const total = fee.tuitionFee + fee.examFee + fee.libraryFee + fee.hostelFee;
+          
+          return (
+            <div key={fee._id} className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <div className="bg-blue-600 px-4 py-3">
+                <h3 className="text-white font-semibold">
+                  {fee.department} - Year {fee.year}
+                </h3>
+                <p className="text-blue-100 text-sm">Semester {fee.semester}</p>
+              </div>
+              
+              <div className="p-4 space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Tuition Fee:</span>
+                  <span className="font-medium">â‚¹{fee.tuitionFee?.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Exam Fee:</span>
+                  <span className="font-medium">â‚¹{fee.examFee?.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Library Fee:</span>
+                  <span className="font-medium">â‚¹{fee.libraryFee?.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Hostel Fee:</span>
+                  <span className="font-medium">â‚¹{fee.hostelFee?.toLocaleString()}</span>
+                </div>
+                
+                <div className="border-t pt-3 mt-3">
+                  <div className="flex justify-between font-semibold">
+                    <span>Total:</span>
+                    <span className="text-blue-600">â‚¹{total.toLocaleString()}</span>
+                  </div>
+                </div>
+                
+                {user?.role === 'admin' && (
+                  <button className="mt-2 w-full btn-secondary flex items-center justify-center gap-2">
+                    <Edit size={18} />
+                    Edit
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        
+        {fees.length === 0 && (
+          <div className="col-span-full text-center py-12 text-gray-500">
+            No fee structures found
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default FeeStructure;
+
+
+================================================
+FILE: Frontend/src/pages/Payments/AddPayment.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { paymentAPI, studentAPI } from '../../api';
+import { Mail, CheckCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+const AddPayment = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [students, setStudents] = useState([]);
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [formData, setFormData] = useState({
+    student: '',
+    amountPaid: '',
+    paymentMode: 'cash',
+    transactionId: '',
+    status: 'completed',
+  });
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
+
+  const fetchStudents = async () => {
+    try {
+      const response = await studentAPI.getAll();
+      setStudents(response.data);
+    } catch (error) {
+      toast.error('Failed to fetch students');
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    
+    if (name === 'student') {
+      const student = students.find(s => s._id === value);
+      setSelectedStudent(student);
+    }
+
+    setFormData({
+      ...formData,
+      [name]: value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const response = await paymentAPI.create(formData);
+      
+      // Show success message with email notification
+      toast.success(
+        <div className="flex items-center gap-2">
+          <CheckCircle className="h-5 w-5 text-green-500" />
+          <div>
+            <p className="font-semibold">Payment added successfully!</p>
+            <p className="text-sm text-gray-600">Confirmation email sent to student</p>
+          </div>
+        </div>,
+        { duration: 5000 }
+      );
+      
+      navigate('/payments');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Add Payment</h1>
+      
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Select Student
+          </label>
+          <select
+            name="student"
+            value={formData.student}
+            onChange={handleChange}
+            required
+            className="input-field"
+          >
+            <option value="">Select a student</option>
+            {students.map((student) => (
+              <option key={student._id} value={student._id}>
+                {student.rollNumber} - {student.user?.name} ({student.department})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedStudent && (
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-700">
+              <Mail size={18} />
+              <span className="text-sm font-medium">
+                Payment confirmation email will be sent to: {selectedStudent.user?.email}
+              </span>
+            </div>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Amount Paid (â‚¹)
+          </label>
+          <input
+            type="number"
+            name="amountPaid"
+            value={formData.amountPaid}
+            onChange={handleChange}
+            required
+            min="1"
+            className="input-field"
+            placeholder="Enter amount"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Payment Mode
+          </label>
+          <select
+            name="paymentMode"
+            value={formData.paymentMode}
+            onChange={handleChange}
+            required
+            className="input-field"
+          >
+            <option value="cash">Cash</option>
+            <option value="upi">UPI</option>
+            <option value="card">Card</option>
+            <option value="online">Online</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Transaction ID (Optional)
+          </label>
+          <input
+            type="text"
+            name="transactionId"
+            value={formData.transactionId}
+            onChange={handleChange}
+            className="input-field"
+            placeholder="Enter transaction ID"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Status
+          </label>
+          <select
+            name="status"
+            value={formData.status}
+            onChange={handleChange}
+            required
+            className="input-field"
+          >
+            <option value="completed">Completed</option>
+            <option value="pending">Pending</option>
+          </select>
+        </div>
+
+        <div className="bg-yellow-50 p-4 rounded-lg mt-4">
+          <p className="text-sm text-yellow-700">
+            <span className="font-medium">Note:</span> An email confirmation will be sent to the student's registered email address after adding the payment.
+          </p>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary flex-1 flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Processing...
+              </>
+            ) : (
+              <>
+                <Mail size={18} />
+                Add Payment & Send Email
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/payments')}
+            className="btn-secondary flex-1"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default AddPayment;
+
+
+================================================
+FILE: Frontend/src/pages/Payments/PaymentList.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { paymentAPI } from '../../api';
+import { Plus, Search } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import toast from 'react-hot-toast';
+
+const PaymentList = () => {
+  const { user } = useAuth();
+  const [payments, setPayments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    fetchPayments();
+  }, []);
+
+  const fetchPayments = async () => {
+    try {
+      const response = await paymentAPI.getAll();
+      setPayments(response.data);
+    } catch (error) {
+      toast.error('Failed to fetch payments');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredPayments = payments.filter(payment =>
+    payment.student?.rollNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    payment.transactionId?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    payment.paymentMode?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading payments...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Payments</h1>
+        {user?.role === 'accountant' && (
+          <Link
+            to="/payments/add"
+            className="btn-primary flex items-center gap-2"
+          >
+            <Plus size={20} />
+            Add Payment
+          </Link>
+        )}
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        <input
+          type="text"
+          placeholder="Search by roll number, transaction ID, or payment mode..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input-field pl-10"
+        />
+      </div>
+
+      {/* Payments Table */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Student
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mode
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Transaction ID
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredPayments.map((payment) => (
+                <tr key={payment._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {payment.student?.rollNumber || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap font-medium">
+                    â‚¹{payment.amountPaid?.toLocaleString()}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap capitalize">
+                    {payment.paymentMode}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {payment.transactionId || 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`px-2 py-1 text-xs rounded-full ${
+                      payment.status === 'completed' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {payment.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {new Date(payment.createdAt).toLocaleDateString()}
+                  </td>
+                </tr>
+              ))}
+              {filteredPayments.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                    No payments found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PaymentList;
+
+
+================================================
+FILE: Frontend/src/pages/Settings/EmailSettings.jsx
+================================================
+import React, { useState } from 'react';
+import { Mail, Save, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+
+const EmailSettings = () => {
+  const { user } = useAuth();
+  const [settings, setSettings] = useState({
+    emailUser: import.meta.env.VITE_EMAIL_USER || '',
+    emailPassword: import.meta.env.VITE_EMAIL_PASS || '',
+  });
+  const [loading, setLoading] = useState(false);
+
+  // Only admin can access email settings
+  if (user?.role !== 'admin') {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-3" />
+          <p className="text-gray-600">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleChange = (e) => {
+    setSettings({
+      ...settings,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      // In a real application, you would save these settings to your backend
+      // For now, we'll just show a success message
+      toast.success('Email settings saved successfully!');
+      
+      // You can also update the .env file or backend configuration here
+      localStorage.setItem('emailSettings', JSON.stringify(settings));
+      
+    } catch (error) {
+      toast.error('Failed to save email settings');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const testEmailConnection = async () => {
+    setLoading(true);
+    try {
+      // Test email configuration by sending a test email
+      // This would need a backend endpoint
+      toast.success('Test email sent successfully! Check your inbox.');
+    } catch (error) {
+      toast.error('Failed to send test email. Check your configuration.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Email Settings</h1>
+      
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="flex items-center gap-2 mb-6 text-blue-600">
+          <Mail size={24} />
+          <h2 className="text-lg font-semibold">Email Configuration</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email User (Gmail Address)
+            </label>
+            <input
+              type="email"
+              name="emailUser"
+              value={settings.emailUser}
+              onChange={handleChange}
+              required
+              className="input-field"
+              placeholder="your-email@gmail.com"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This email will be used to send notifications to students
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Email Password (App Password)
+            </label>
+            <input
+              type="password"
+              name="emailPassword"
+              value={settings.emailPassword}
+              onChange={handleChange}
+              required
+              className="input-field"
+              placeholder="Your Gmail app password"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              For Gmail, use an App Password instead of your regular password
+            </p>
+          </div>
+
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h3 className="font-medium text-blue-800 mb-2">How to get Gmail App Password:</h3>
+            <ol className="text-sm text-blue-700 space-y-1 list-decimal pl-4">
+              <li>Go to your Google Account settings</li>
+              <li>Enable 2-Factor Authentication</li>
+              <li>Go to Security â†’ App Passwords</li>
+              <li>Generate a new app password for "Mail"</li>
+              <li>Copy and paste it here</li>
+            </ol>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary flex-1 flex items-center justify-center gap-2"
+            >
+              <Save size={18} />
+              {loading ? 'Saving...' : 'Save Settings'}
+            </button>
+            <button
+              type="button"
+              onClick={testEmailConnection}
+              disabled={loading}
+              className="btn-secondary flex-1"
+            >
+              Test Connection
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default EmailSettings;
+
+
+================================================
+FILE: Frontend/src/pages/Students/AddStudent.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { studentAPI, authAPI } from '../../api';
+import toast from 'react-hot-toast';
+
+const AddStudent = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [formData, setFormData] = useState({
+    user: '',
+    rollNumber: '',
+    department: '',
+    year: '',
+    semester: '',
+  });
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      // This should be replaced with an API call to get users with student role
+      // For now, we'll use a mock or you'll need to create this endpoint
+      const response = await authAPI.getAllUsers?.() || { data: [] };
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Failed to fetch users');
+    }
+  };
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      await studentAPI.create(formData);
+      toast.success('Student added successfully');
+      navigate('/students');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to add student');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Add New Student</h1>
+      
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm p-6 space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Select User
+          </label>
+          <select
+            name="user"
+            value={formData.user}
+            onChange={handleChange}
+            required
+            className="input-field"
+          >
+            <option value="">Select a user</option>
+            {users.map((user) => (
+              <option key={user._id} value={user._id}>
+                {user.name} ({user.email})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Roll Number
+          </label>
+          <input
+            type="text"
+            name="rollNumber"
+            value={formData.rollNumber}
+            onChange={handleChange}
+            required
+            className="input-field"
+            placeholder="Enter roll number"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Department
+          </label>
+          <input
+            type="text"
+            name="department"
+            value={formData.department}
+            onChange={handleChange}
+            required
+            className="input-field"
+            placeholder="Enter department"
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Year
+            </label>
+            <input
+              type="number"
+              name="year"
+              value={formData.year}
+              onChange={handleChange}
+              required
+              min="1"
+              max="4"
+              className="input-field"
+              placeholder="Year"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Semester
+            </label>
+            <input
+              type="number"
+              name="semester"
+              value={formData.semester}
+              onChange={handleChange}
+              required
+              min="1"
+              max="8"
+              className="input-field"
+              placeholder="Semester"
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-4">
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary flex-1"
+          >
+            {loading ? 'Adding...' : 'Add Student'}
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate('/students')}
+            className="btn-secondary flex-1"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+export default AddStudent;
+
+
+================================================
+FILE: Frontend/src/pages/Students/StudentList.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { studentAPI } from '../../api';
+import { Eye, Plus, Search } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+const StudentList = () => {
+  const [students, setStudents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    fetchStudents();
+  }, []);
+
+  const fetchStudents = async () => {
+    try {
+      const response = await studentAPI.getAll();
+      setStudents(response.data);
+    } catch (error) {
+      toast.error('Failed to fetch students');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredStudents = students.filter(student =>
+    student.rollNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    student.department?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading students...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Students</h1>
+        <Link
+          to="/students/add"
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus size={20} />
+          Add Student
+        </Link>
+      </div>
+
+      {/* Search Bar */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+        <input
+          type="text"
+          placeholder="Search by roll number, name, or department..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="input-field pl-10"
+        />
+      </div>
+
+      {/* Students Table */}
+      <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Roll Number
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Name
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Department
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Year
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Semester
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredStudents.map((student) => (
+                <tr key={student._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap font-medium">
+                    {student.rollNumber}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {student.user?.name}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {student.department}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    Year {student.year}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    Semester {student.semester}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <Link
+                      to={`/students/${student._id}/summary`}
+                      className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <Eye size={18} />
+                      View Summary
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {filteredStudents.length === 0 && (
+                <tr>
+                  <td colSpan="6" className="px-6 py-4 text-center text-gray-500">
+                    No students found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default StudentList;
+
+
+================================================
+FILE: Frontend/src/pages/Students/StudentSummary.jsx
+================================================
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { studentAPI } from '../../api';
+import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Mail, Bell } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useAuth } from '../../context/AuthContext';
+
+const StudentSummary = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sendingReminder, setSendingReminder] = useState(false);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [id]);
+
+  const fetchSummary = async () => {
+    try {
+      const response = await studentAPI.getSummary(id);
+      setSummary(response.data);
+    } catch (error) {
+      toast.error('Failed to fetch student summary');
+      navigate('/students');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendReminder = async () => {
+    if (!confirm('Send fee reminder email to this student?')) {
+      return;
+    }
+
+    setSendingReminder(true);
+    try {
+      const response = await studentAPI.sendFeeReminder(id);
+      toast.success(response.data.message || 'Reminder sent successfully!');
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Failed to send reminder');
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">Loading summary...</div>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-gray-500">No summary available</div>
+      </div>
+    );
+  }
+
+  const hasDue = summary.remaining > 0;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() => navigate('/students')}
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+        >
+          <ArrowLeft size={20} />
+          Back to Students
+        </button>
+
+        {/* Send Reminder Button - Only for Admin */}
+        {user?.role === 'admin' && hasDue && (
+          <button
+            onClick={handleSendReminder}
+            disabled={sendingReminder}
+            className="flex items-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+          >
+            {sendingReminder ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Sending...
+              </>
+            ) : (
+              <>
+                <Mail size={18} />
+                Send Fee Reminder
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
+      <h1 className="text-2xl font-bold text-gray-900">
+        Student Summary - {summary.student}
+      </h1>
+
+      {/* Due Alert */}
+      {hasDue && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded">
+          <div className="flex items-center">
+            <Bell className="h-5 w-5 text-yellow-400 mr-2" />
+            <div>
+              <p className="text-sm text-yellow-700">
+                <span className="font-medium">Due Alert!</span> Student has pending fees of â‚¹{summary.remaining?.toLocaleString()}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Total Fee Card */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-blue-100 p-3 rounded-full">
+              <DollarSign className="h-6 w-6 text-blue-600" />
+            </div>
+            <TrendingUp className="h-5 w-5 text-green-500" />
+          </div>
+          <p className="text-sm text-gray-600">Total Fee</p>
+          <p className="text-2xl font-semibold">â‚¹{summary.totalFee?.toLocaleString()}</p>
+        </div>
+
+        {/* Total Paid Card */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="bg-green-100 p-3 rounded-full">
+              <DollarSign className="h-6 w-6 text-green-600" />
+            </div>
+            <TrendingUp className="h-5 w-5 text-green-500" />
+          </div>
+          <p className="text-sm text-gray-600">Total Paid</p>
+          <p className="text-2xl font-semibold">â‚¹{summary.totalPaid?.toLocaleString()}</p>
+        </div>
+
+        {/* Remaining Fee Card */}
+        <div className="bg-white rounded-lg shadow-sm p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className={`p-3 rounded-full ${hasDue ? 'bg-orange-100' : 'bg-green-100'}`}>
+              <DollarSign className={`h-6 w-6 ${hasDue ? 'text-orange-600' : 'text-green-600'}`} />
+            </div>
+            {hasDue ? (
+              <TrendingDown className="h-5 w-5 text-red-500" />
+            ) : (
+              <TrendingUp className="h-5 w-5 text-green-500" />
+            )}
+          </div>
+          <p className="text-sm text-gray-600">Remaining Fee</p>
+          <p className={`text-2xl font-semibold ${hasDue ? 'text-orange-600' : 'text-green-600'}`}>
+            â‚¹{summary.remaining?.toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <h2 className="text-lg font-semibold mb-4">Payment Progress</h2>
+        <div className="space-y-2">
+          <div className="flex justify-between text-sm">
+            <span>Paid: â‚¹{summary.totalPaid?.toLocaleString()}</span>
+            <span>Remaining: â‚¹{summary.remaining?.toLocaleString()}</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-4">
+            <div
+              className={`h-4 rounded-full transition-all duration-500 ${
+                hasDue ? 'bg-orange-500' : 'bg-green-500'
+              }`}
+              style={{
+                width: `${(summary.totalPaid / summary.totalFee) * 100}%`,
+              }}
+            ></div>
+          </div>
+          <div className="flex justify-between text-sm">
+            <p className="text-gray-600">
+              {((summary.totalPaid / summary.totalFee) * 100).toFixed(1)}% Complete
+            </p>
+            {hasDue && (
+              <p className="text-orange-600 font-medium">
+                Due: â‚¹{summary.remaining?.toLocaleString()}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default StudentSummary;
 

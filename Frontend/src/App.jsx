@@ -19,6 +19,8 @@ import PaymentList from './pages/Payments/PaymentList';
 import AddPayment from './pages/Payments/AddPayment';
 import Unauthorized from './pages/Unauthorized';
 import ProtectedRoute from './components/ProtectedRoute';
+import EmailSettings from './pages/Settings/EmailSettings';
+import CreateUser from './pages/Admin/CreateUser';
 
 function AppRoutes() {
   const { user } = useAuth();
@@ -28,11 +30,21 @@ function AppRoutes() {
       <Route path="/login" element={!user ? <Login /> : <Navigate to="/dashboard" />} />
       <Route path="/register" element={!user ? <Register /> : <Navigate to="/dashboard" />} />
       <Route path="/unauthorized" element={<Unauthorized />} />
-      
+      <Route path="settings/email" element={
+        <ProtectedRoute allowedRoles={['admin']}>
+          <EmailSettings />
+        </ProtectedRoute>
+      } />
+      <Route path="admin/create-user" element={
+        <ProtectedRoute allowedRoles={['admin']}>
+          <CreateUser />
+        </ProtectedRoute>
+      } />
+
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Navigate to="/dashboard" />} />
         <Route path="dashboard" element={<Dashboard />} />
-        
+
         {/* Student Routes */}
         <Route path="students">
           <Route index element={
@@ -51,7 +63,7 @@ function AppRoutes() {
             </ProtectedRoute>
           } />
         </Route>
-        
+
         {/* Fee Routes */}
         <Route path="fees">
           <Route index element={<FeeStructure />} />
@@ -61,7 +73,7 @@ function AppRoutes() {
             </ProtectedRoute>
           } />
         </Route>
-        
+
         {/* Payment Routes */}
         <Route path="payments">
           <Route index element={

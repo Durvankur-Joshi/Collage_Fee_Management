@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Mail, Lock, User } from 'lucide-react';
 
 const Register = () => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
-    role: 'student',
+    // role is removed - will default to 'student' on backend
   });
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
@@ -39,7 +39,7 @@ const Register = () => {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create new account
+            Create Student Account
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Or{' '}
@@ -55,66 +55,66 @@ const Register = () => {
               <label htmlFor="name" className="block text-sm font-medium text-gray-700">
                 Full Name
               </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                required
-                value={formData.name}
-                onChange={handleChange}
-                className="input-field mt-1"
-                placeholder="Enter your full name"
-              />
+              <div className="relative mt-1">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="input-field pl-10"
+                  placeholder="Enter your full name"
+                />
+              </div>
             </div>
             
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700">
                 Email address
               </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="input-field mt-1"
-                placeholder="Enter your email"
-              />
+              <div className="relative mt-1">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="input-field pl-10"
+                  placeholder="Enter your email"
+                />
+              </div>
             </div>
             
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-gray-700">
                 Password
               </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="input-field mt-1"
-                placeholder="Enter your password"
-              />
+              <div className="relative mt-1">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength="6"
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="input-field pl-10"
+                  placeholder="Enter your password (min. 6 characters)"
+                />
+              </div>
             </div>
-            
-            <div>
-              <label htmlFor="role" className="block text-sm font-medium text-gray-700">
-                Role
-              </label>
-              <select
-                id="role"
-                name="role"
-                value={formData.role}
-                onChange={handleChange}
-                className="input-field mt-1"
-              >
-                <option value="student">Student</option>
-                <option value="accountant">Accountant</option>
-                <option value="admin">Admin</option>
-              </select>
+
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <p className="text-sm text-blue-700">
+                <span className="font-medium">Note:</span> You are creating a student account. 
+                Admin and accountant accounts can only be created by existing administrators.
+              </p>
             </div>
           </div>
 
@@ -127,7 +127,7 @@ const Register = () => {
               <span className="absolute left-0 inset-y-0 flex items-center pl-3">
                 <UserPlus className="h-5 w-5 text-blue-500 group-hover:text-blue-400" />
               </span>
-              {loading ? 'Creating account...' : 'Create account'}
+              {loading ? 'Creating account...' : 'Create Student Account'}
             </button>
           </div>
         </form>

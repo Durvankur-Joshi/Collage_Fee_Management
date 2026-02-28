@@ -7,6 +7,8 @@ import {
   CreditCard,
   Receipt,
   UserPlus,
+  Mail,
+  UserCog, // New icon for user management
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -43,9 +45,21 @@ const Sidebar = () => {
       label: 'Payments',
       roles: ['admin', 'accountant'],
     },
+    {
+      to: '/admin/create-user', // New route for creating admin/accountant
+      icon: <UserCog size={20} />,
+      label: 'Create User',
+      roles: ['admin'],
+    },
+    {
+      to: '/settings/email',
+      icon: <Mail size={20} />,
+      label: 'Email Settings',
+      roles: ['admin'],
+    },
   ];
 
-  const filteredNavItems = navItems.filter(item => 
+  const filteredNavItems = navItems.filter(item =>
     item.roles.includes(user?.role)
   );
 
