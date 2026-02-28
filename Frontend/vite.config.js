@@ -7,9 +7,15 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'https://college-fee-backend.onrender.com',
         changeOrigin: true,
       }
     }
+  },
+  // Add build configuration
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    minify: true
   }
 })
