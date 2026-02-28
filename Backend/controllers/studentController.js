@@ -41,6 +41,16 @@ export const getStudentSummary = async (req, res) => {
   try {
     const studentId = req.params.id;
 
+    // If user is a student, verify they are accessing their own summary
+    if (req.user.role === 'student') {
+      const student = await Student.findOne({ user: req.user._id });
+      if (!student || student._id.toString() !== studentId) {
+        return res.status(403).json({ 
+          message: "You can only view your own fee summary" 
+        });
+      }
+    }
+
     const student = await Student.findById(studentId);
 
     if (!student) {
@@ -184,6 +194,26 @@ export const createStudentWithUser = async (req, res) => {
       student: populatedStudent,
     });
   } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Get current student profile for logged-in student
+export const getCurrentStudent = async (req, res) => {
+  try {
+    // Find student associated with the logged-in user
+    const student = await Student.findOne({ user: req.user._id })
+      .populate("user", "-password");
+    
+    if (!student) {
+      return res.status(404).json({ 
+        message: "Student profile not found. Please contact administrator." 
+      });
+    }
+    
+    res.json(student);
+  } catch (error) {
+    console.error("Error in getCurrentStudent:", error);
     res.status(500).json({ message: error.message });
   }
 };

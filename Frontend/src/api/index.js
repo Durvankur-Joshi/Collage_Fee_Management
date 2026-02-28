@@ -8,14 +8,15 @@ export const authAPI = {
 };
 
 // Student APIs
-// Student APIs
 export const studentAPI = {
   getAll: () => axios.get('/students'),
+  getCurrentStudent: () => axios.get('/students/me'), // New endpoint
   create: (data) => axios.post('/students', data),
-  createWithUser: (data) => axios.post('/students/with-user', data), // New combined endpoint
+  createWithUser: (data) => axios.post('/students/with-user', data),
   getSummary: (id) => axios.get(`/students/${id}/summary`),
   sendFeeReminder: (id) => axios.post(`/students/${id}/send-reminder`),
 };
+
 
 // Fee APIs
 export const feeAPI = {
