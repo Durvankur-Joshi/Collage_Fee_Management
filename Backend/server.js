@@ -15,8 +15,13 @@ connectDB();
 
 const app = express();
 
+// Configure CORS for production
+app.use(cors({
+  origin: process.env.FRONTEND_URL || true,
+  credentials: true
+}));
+
 app.use(express.json());
-app.use(cors());
 app.use(morgan("dev"));
 app.use(cookieParser());
 
@@ -24,6 +29,11 @@ app.use("/api/auth", authRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/fees", feeRoutes);
 app.use("/api/payments", paymentRoutes);
+
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", message: "Server is running" });
+});
 
 const PORT = process.env.PORT || 5000;
 
