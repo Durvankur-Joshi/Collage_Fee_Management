@@ -17,9 +17,17 @@ const app = express();
 
 // Configure CORS for production
 app.use(cors({
-  origin: process.env.FRONTEND_URL || true,
-  credentials: true
+  origin: [
+    'http://localhost:3000',
+    'https://your-frontend.vercel.app', // Your actual Vercel URL
+    'https://collage-fee-management.vercel.app' // Your frontend domain
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.options('*', cors());
 
 app.use(express.json());
 app.use(morgan("dev"));
