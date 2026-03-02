@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { studentAPI } from '../../api';
 import { User, Mail, Lock, Hash, BookOpen, GraduationCap, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { authAPI } from '../../api';
 
 const AddStudent = () => {
-  const navigate = useNavigate();
+   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -29,33 +30,46 @@ const AddStudent = () => {
     setLoading(true);
 
     try {
-      // Use the combined endpoint that creates both user and student
-      await studentAPI.createWithUser({
+      // First create the user account
+      console.log('1️⃣ Registering user:', formData.email);
+      const registerResponse = await authAPI.register({
         name: formData.name,
         email: formData.email,
-        password: formData.password,
+        password: formData.password
+      });
+      
+      console.log('2️⃣ User created:', registerResponse.data);
+
+      // Then create student profile with the user ID
+      const studentData = {
+        user: registerResponse.data._id,
         rollNumber: formData.rollNumber,
         department: formData.department,
         year: parseInt(formData.year),
         semester: parseInt(formData.semester),
-      });
+      };
       
-      toast.success('Student added successfully! They can now login with their email and password.');
+      console.log('3️⃣ Creating student profile:', studentData);
+      await studentAPI.create(studentData);
+      
+      toast.success('Student added successfully!');
       navigate('/students');
     } catch (error) {
+      console.error('❌ Error in handleSubmit:', error);
       toast.error(error.response?.data?.message || 'Failed to add student');
     } finally {
       setLoading(false);
     }
   };
 
+
   return (
     <div className="max-w-2xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Add New Student</h1>
-      
+
       <form onSubmit={handleSubmit} className="bg-white rounded-lg shadow-sm p-6 space-y-4">
         <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">Account Information</h2>
-        
+
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Full Name
@@ -201,7 +215,7 @@ const AddStudent = () => {
 
         <div className="bg-green-50 p-4 rounded-lg mt-4">
           <p className="text-sm text-green-700">
-            <span className="font-medium">✨ One-step process:</span> This will create both the user account and student profile simultaneously. 
+            <span className="font-medium">✨ One-step process:</span> This will create both the user account and student profile simultaneously.
             The student can login using the email and password you set.
           </p>
         </div>

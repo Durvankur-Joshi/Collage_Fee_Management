@@ -43,21 +43,22 @@ export const getStudentSummary = async (req, res) => {
 
     // If user is a student, verify they are accessing their own summary
     if (req.user.role === 'student') {
-      const student = await Student.findOne({ user: req.user._id });
-      if (!student || student._id.toString() !== studentId) {
+      const studentRecord = await Student.findOne({ user: req.user._id }); // ✅ Different name
+      if (!studentRecord || studentRecord._id.toString() !== studentId) {
         return res.status(403).json({ 
           message: "You can only view your own fee summary" 
         });
       }
     }
 
-    const student = await Student.findById(studentId);
+    // Now query for the student by ID
+    const student = await Student.findById(studentId); // ✅ This works now
 
     if (!student) {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    // Find fee structure
+    // Rest of your code...
     const feeStructure = await FeeStructure.findOne({
       department: student.department,
       year: student.year,
@@ -74,14 +75,8 @@ export const getStudentSummary = async (req, res) => {
       feeStructure.libraryFee +
       feeStructure.hostelFee;
 
-    // Get payments
     const payments = await Payment.find({ student: studentId });
-
-    const totalPaid = payments.reduce(
-      (acc, payment) => acc + payment.amountPaid,
-      0
-    );
-
+    const totalPaid = payments.reduce((acc, payment) => acc + payment.amountPaid, 0);
     const remaining = totalFee - totalPaid;
 
     res.json({
@@ -91,6 +86,7 @@ export const getStudentSummary = async (req, res) => {
       remaining,
     });
   } catch (error) {
+    console.error("Error in getStudentSummary:", error);
     res.status(500).json({ message: error.message });
   }
 };
