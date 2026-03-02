@@ -26,8 +26,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// ✅ Handle preflight requests CORRECTLY
-app.options('/*', cors());
+
 
 app.use(express.json());
 app.use(morgan("dev"));
@@ -45,7 +44,7 @@ app.get("/health", (req, res) => {
 });
 
 // ✅ CORRECT 404 HANDLER (use /* not *)
-app.use('/*', (req, res) => {
+app.use('/', (req, res) => {
   res.status(404).json({ 
     success: false,
     message: "Route not found" 
