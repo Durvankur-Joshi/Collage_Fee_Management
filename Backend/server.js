@@ -15,32 +15,41 @@ connectDB();
 
 const app = express();
 
-// Configure CORS for production
+// ✅ CORRECT CORS CONFIGURATION
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://your-frontend.vercel.app', // Your actual Vercel URL
-    'https://collage-fee-management.vercel.app' // Your frontend domain
+    'https://collage-fee-management.vercel.app' 
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.options('*/', cors());
+// ✅ Handle preflight requests CORRECTLY
+app.options('/*', cors());
 
 app.use(express.json());
 app.use(morgan("dev"));
 app.use(cookieParser());
 
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/fees", feeRoutes);
 app.use("/api/payments", paymentRoutes);
 
-// Health check endpoint
+// ✅ HEALTH CHECK ENDPOINT
 app.get("/health", (req, res) => {
-  res.json({ status: "OK", message: "Server is running" });
+  res.status(200).json({ status: "OK", message: "Server is running" });
+});
+
+// ✅ CORRECT 404 HANDLER (use /* not *)
+app.use('/*', (req, res) => {
+  res.status(404).json({ 
+    success: false,
+    message: "Route not found" 
+  });
 });
 
 const PORT = process.env.PORT || 5000;
