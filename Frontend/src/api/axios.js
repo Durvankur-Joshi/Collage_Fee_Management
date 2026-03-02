@@ -1,7 +1,8 @@
+
 import axios from 'axios';
 
 // Use full URL with explicit logging
-const API_URL = 'http://localhost:5000';
+const API_URL = 'https://collagefeemanagement.onrender.com';
 
 console.log('🔧 API URL:', API_URL); // Add this to verify
 
