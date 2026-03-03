@@ -2,7 +2,7 @@ import express from "express";
 import { 
   createStudent, 
   getAllStudents, 
-  getStudentSummary, 
+  getStudentSummary,
   sendFeeReminder,
   getCurrentStudent 
 } from "../controllers/studentController.js";

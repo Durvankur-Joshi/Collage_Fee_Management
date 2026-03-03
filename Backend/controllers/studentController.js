@@ -33,63 +33,136 @@ export const getAllStudents = async (req, res) => {
   res.json(students);
 };
 
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-// Get student summary (fees and payments)
-// ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+// ============================================
+// STUDENT SUMMARY - COMPLETELY REWRITTEN
+// ============================================
 export const getStudentSummary = async (req, res) => {
   try {
-    const studentId = req.params.id;
+    const { id } = req.params;
+    console.log("🔍 Fetching summary for student ID:", id);
 
-    // If user is a student, verify they are accessing their own summary
-    if (req.user.role === 'student') {
-      const studentRecord = await Student.findOne({ user: req.user._id }); // ✅ Different name
-      if (!studentRecord || studentRecord._id.toString() !== studentId) {
-        return res.status(403).json({ 
-          message: "You can only view your own fee summary" 
-        });
-      }
-    }
-
-    // Now query for the student by ID
-    const student = await Student.findById(studentId); // ✅ This works now
-
+    // 1. Find the student with populated user data
+    const student = await Student.findById(id).populate('user', 'name email');
+    
     if (!student) {
-      return res.status(404).json({ message: "Student not found" });
+      console.log("❌ Student not found in database");
+      return res.status(404).json({ 
+        success: false,
+        message: "Student not found" 
+      });
     }
 
-    // Rest of your code...
+    console.log("✅ Student found:", {
+      id: student._id,
+      rollNumber: student.rollNumber,
+      department: student.department,
+      year: student.year,
+      semester: student.semester
+    });
+
+    // 2. Find fee structure for this student
     const feeStructure = await FeeStructure.findOne({
       department: student.department,
       year: student.year,
-      semester: student.semester,
+      semester: student.semester
     });
 
     if (!feeStructure) {
-      return res.status(404).json({ message: "Fee structure not found" });
+      console.log("❌ No fee structure found for:", {
+        department: student.department,
+        year: student.year,
+        semester: student.semester
+      });
+      return res.status(404).json({ 
+        success: false,
+        message: "Fee structure not found for this student's department/year/semester" 
+      });
     }
 
-    const totalFee =
-      feeStructure.tuitionFee +
-      feeStructure.examFee +
-      feeStructure.libraryFee +
-      feeStructure.hostelFee;
+    console.log("✅ Fee structure found:", {
+      tuitionFee: feeStructure.tuitionFee,
+      examFee: feeStructure.examFee,
+      libraryFee: feeStructure.libraryFee,
+      hostelFee: feeStructure.hostelFee
+    });
 
-    const payments = await Payment.find({ student: studentId });
-    const totalPaid = payments.reduce((acc, payment) => acc + payment.amountPaid, 0);
-    const remaining = totalFee - totalPaid;
+    // 3. Calculate total fee
+    const totalFee = 
+      (feeStructure.tuitionFee || 0) + 
+      (feeStructure.examFee || 0) + 
+      (feeStructure.libraryFee || 0) + 
+      (feeStructure.hostelFee || 0);
 
-    res.json({
-      student: student.rollNumber,
+    // 4. Find all payments for this student
+    const payments = await Payment.find({ 
+      student: student._id,
+      status: "completed" 
+    }).sort({ createdAt: -1 });
+
+    console.log(`✅ Found ${payments.length} payments for student`);
+
+    // 5. Calculate total paid
+    const totalPaid = payments.reduce((sum, payment) => sum + (payment.amountPaid || 0), 0);
+    
+    // 6. Calculate remaining
+    const remaining = Math.max(0, totalFee - totalPaid);
+
+    // 7. Prepare response
+    const summary = {
+      success: true,
+      student: {
+        id: student._id,
+        rollNumber: student.rollNumber,
+        name: student.user?.name || "Unknown",
+        email: student.user?.email || "Unknown",
+        department: student.department,
+        year: student.year,
+        semester: student.semester
+      },
+      feeDetails: {
+        tuitionFee: feeStructure.tuitionFee || 0,
+        examFee: feeStructure.examFee || 0,
+        libraryFee: feeStructure.libraryFee || 0,
+        hostelFee: feeStructure.hostelFee || 0,
+        totalFee: totalFee
+      },
+      paymentSummary: {
+        totalPaid: totalPaid,
+        remaining: remaining,
+        paymentCount: payments.length,
+        isFullyPaid: remaining === 0,
+        hasDue: remaining > 0
+      },
+      recentPayments: payments.slice(0, 5).map(p => ({
+        id: p._id,
+        amount: p.amountPaid,
+        mode: p.paymentMode,
+        transactionId: p.transactionId,
+        date: p.createdAt,
+        status: p.status
+      }))
+    };
+
+    console.log("📊 Summary calculated:", {
       totalFee,
       totalPaid,
       remaining,
+      paymentCount: payments.length
     });
+
+    res.status(200).json(summary);
+
   } catch (error) {
-    console.error("Error in getStudentSummary:", error);
-    res.status(500).json({ message: error.message });
+    console.error("❌ Error in getStudentSummary:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Server error while fetching student summary",
+      error: error.message 
+    });
   }
 };
+
 
 export const sendFeeReminder = async (req, res) => {
   try {
